@@ -1,0 +1,149 @@
+---
+title: "Part 2 DengAI Model Testing & Validation"
+author: "Paul Y"
+date: "23/03/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(janitor) # https://cran.r-project.org/web/packages/janitor/janitor.pdf
+library(tidyverse)
+library(DataExplorer)
+library(data.table)
+library(ggcorrplot)
+library(corrplot)
+library(RColorBrewer)
+library(devtools)
+library(readr)
+library(plotly)
+library(ggplot2)
+library(zoo)
+library(rstatix)
+library(scales)   # to access breaks/formatting functions
+library(gridExtra) # for arranging plots
+library(Hmisc)
+library(caTools)
+library(MASS)
+```
+The following course was used to supplement model testing & validation: 
+https://www.udemy.com/course/machinelearning/
+
+```{r message=FALSE, warning=FALSE}
+train_df <- read.csv("train_df.csv", header = T, stringsAsFactors = F)
+train_iq <- read.csv("train_iq.csv", header = T, stringsAsFactors = F)
+train_sj <- read.csv("train_sj.csv", header = T, stringsAsFactors = F)
+```
+
+Let us repeat our correlation matrix & signficance results once more. 
+```{r message=FALSE, warning=FALSE}
+rcorr_df <- rcorr(as.matrix(train_df[, c(5:21,25:26)]))
+rcorr_iq <- rcorr(as.matrix(train_iq[, c(5:21,25:26)]))
+rcorr_sj <- rcorr(as.matrix(train_sj[, c(5:21,25:26)]))
+```
+
+```{r message=FALSE, warning=FALSE}
+# ++++++++++++++++++++++++++++
+# flattenCorrMatrix
+# ++++++++++++++++++++++++++++
+# cormat : matrix of the correlation coefficients
+# pmat : matrix of the correlation p-values
+flattenCorrMatrix <- function(cormat, pmat) {
+  ut <- upper.tri(cormat)
+  data.frame(
+    row = rownames(cormat)[row(cormat)[ut]],
+    column = rownames(cormat)[col(cormat)[ut]],
+    cor  =(cormat)[ut],
+    p = pmat[ut]
+    )
+}
+```
+
+Extract the p-values & correlation from both cities with target variable total_cases. We sort the dataset by ascending p-value, as the lower it is, the higher the significance of the predictor variable in correlation with the target variable. 
+```{r message=FALSE, warning=FALSE}
+DF <- flattenCorrMatrix(rcorr_df$r, rcorr_df$P) 
+sub_df <- subset(DF , column=="total_cases") 
+sub_df[order(sub_df$p), ] # Sort training set by ascending p-values
+IQ <- flattenCorrMatrix(rcorr_iq$r, rcorr_iq$P) 
+sub_iq <- subset(IQ , column=="total_cases") 
+sub_iq[order(sub_iq$p), ] # Sort Iquitos training set by ascending p-values
+SJ <- flattenCorrMatrix(rcorr_sj$r, rcorr_sj$P) 
+sub_sj <- subset(SJ , column=="total_cases") 
+sub_sj[order(sub_sj$p), ] # Sort Iquitos training set by ascending p-values
+# you can use the function attach(df) so that the database is searched by R when evaluating a variable; no need to specify df$col_name in a function, just simply give the col_name.
+```
+
+## **Backward Elimination** 
+
+For now, we will work on the train_df dataset just for trial purposes. More accurate testing & modeling will be done along the way.
+
+Encode categorical data
+```{r message=FALSE, warning=FALSE}
+train_df$city = factor(train_df$city, levels = c('iq', 'sj'), labels = c(1,2))
+```
+
+Subset the Iquitos dataset into the training & testing set using the package caTools. Do the same for San Juan. 
+
+https://towardsdatascience.com/train-test-split-and-cross-validation-in-python-80b61beca4b6
+https://datascience.stackexchange.com/questions/48780/why-split-data-into-train-and-test-in-linear-regression
+```{r message=FALSE, warning=FALSE}
+split_iq = sample.split(train_iq$total_cases, SplitRatio = 0.8)
+split_sj = sample.split(train_sj$total_cases, SplitRatio = 0.8)
+iq_training = subset(train_iq, split_iq == TRUE)
+sj_training = subset(train_sj, split_sj == TRUE)
+lm_test_iq = subset(train_iq, split_iq == FALSE)
+lm_test_sj = subset(train_sj, split_sj == FALSE)
+split_df = sample.split(train_df$total_cases, SplitRatio = 0.8) 
+df_training = subset(train_df, split_df == TRUE)
+lm_test_df = subset(train_df, split_df == FALSE) 
+```
+
+Fit Multiple Linear Regression to the Training Sets. The independent variables will be the climate features; exclude categorical & class attributes (other than city).  
+
+Fit MLR to training set and display summary
+```{r message=FALSE, warning=FALSE}
+mlr_df_regressor <- lm(formula = total_cases ~ ., data = subset(df_training, select = -c(2,3,4,22,23,24)))
+summary(mlr_df_regressor)
+```
+Library caTools took care of the dummy variables. When encoding the city variable as factors, R automatically removed one of the dummy variables to avoid redundant dependency. The information from the variable ReaTotalPrecip_mm is already contained in other variables & thus redundant. Refer to 
+https://analyticstraining.com/understanding-dummy-variable-traps-regression/
+for more info.
+The last two columns of our summary, the p-value and significance level, is the most important for interpretation. The lower the p-value is, the more impact this independent variable will have on the dependent variable. From our summary, we have very high p-values among our independent variables. The one climate variable that is most significant in our model would be ReaAvgAir_tempC; the average air temperature in Centigrade (°C) recorded by National Oceanic Atmospheric Administration (NOAA).
+
+Since there is only one significant variable for our prediction, we can turn this into a simple linear regression. 
+```{r message=FALSE, warning=FALSE}
+slr <- lm(formula = total_cases ~ ReaAvgAir_tempC, data = subset(df_training, select = -c(2,3,4,22,23,24)))
+summary(slr)
+```
+
+Now predict on the test set. 
+```{r message=FALSE, warning=FALSE}
+df_mlr_pred <- predict(mlr_df_regressor, newdata = lm_test_df)
+df_mlr_pred # use the mlr regressor with all possible climate features
+
+df_lr_pred <- predict(slr, newdata = lm_test_df)
+df_lr_pred # use the slr regressor with just feature ReaAvgAir_tempC
+```
+
+```{r message=FALSE, warning=FALSE}
+df_lr_pred <- predict(slr, newdata = lm_test_df)
+df_lr_pred # use the slr regressor with just feature ReaAvgAir_tempC
+```
+Our observations are very off. There will be some fine tuning needing to be done. The first step to note down is the the class of the variables; maybe there has been a mistake in formatting. We can go back & fix some of our data cleaning if need be. Another thing to notice is that our features have very low significance towards the total_cases variable. We will try other machine learning algorithms to strengthen our predictions. 
+
+** Rough material;
+
+Fit MLR to Iquitos training set and display summary
+```{r message=FALSE, warning=FALSE}
+# regressor_iq = lm(formula = total_cases ~ ndvi_ne + ndvi_nw + ndvi_se + ndvi_sw + SatTotalPrecip_mm + ReaMeanAir_tempC + ReaAvgAir_tempC + ReaMeanDewPoint_tempC + ReaTotalPrecip_kgm2 + ReaMeanHum_percent + ReaTotalPrecip_mm + ReaMeaHum_perkg + ReaDiurRange_tempC + StaAvg_tempC + StaDiurRange_tempC + StaTotalPrecip_mm + ReaAvgMaxMin_tempC + StaAvgMaxMin_tempC, data = iq_training)
+# regressor_iq <- lm(formula = total_cases ~ ., data = subset(iq_training, select = -c(1,2,3,4,22,23,24)))
+# summary(regressor_iq)
+```
+
+Fit MLR to San Juan training set and display summary
+```{r message=FALSE, warning=FALSE}
+# regressor_iq = lm(formula = total_cases ~ ndvi_ne + ndvi_nw + ndvi_se + ndvi_sw + SatTotalPrecip_mm + ReaMeanAir_tempC + ReaAvgAir_tempC + ReaMeanDewPoint_tempC + ReaTotalPrecip_kgm2 + ReaMeanHum_percent + ReaTotalPrecip_mm + ReaMeaHum_perkg + ReaDiurRange_tempC + StaAvg_tempC + StaDiurRange_tempC + StaTotalPrecip_mm + ReaAvgMaxMin_tempC + StaAvgMaxMin_tempC, data = iq_training)
+# regressor_sj <- lm(formula = total_cases ~ ., data = subset(sj_training, select = -c(1,2,3,4,22,23,24)))
+# summary(regressor_sj)
+```
