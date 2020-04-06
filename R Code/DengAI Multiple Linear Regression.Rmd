@@ -1,0 +1,111 @@
+---
+title: "DengAI Model Multiple Linear Regression"
+author: "Paul Y"
+date: "23/03/2020"
+output: html_document
+---
+
+```{r setup, include=T, message=FALSE, warning=FALSE}
+# setwd("G:/My Drive/CAPSTONE/working")
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(tidyverse)
+library(caTools)
+library(MASS)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+train_df <- read.csv("train_df.csv", header = T, stringsAsFactors = F)
+train_iq <- read.csv("train_iq.csv", header = T, stringsAsFactors = F)
+train_sj <- read.csv("train_sj.csv", header = T, stringsAsFactors = F)
+test_df <- read.csv("test_df.csv", header = T, stringsAsFactors = F)
+test_iq <- read.csv("test_iq.csv", header = T, stringsAsFactors = F)
+test_sj <- read.csv("test_sj.csv", header = T, stringsAsFactors = F)
+submissions = read.csv("submission_format.csv", header = T, stringsAsFactors = F)
+```
+
+## **Multiple Linear Regression** 
+
+For now, we will work on the train_df dataset just for trial purposes. More accurate testing & modeling will be done along the way.
+
+
+Subset train_df into the training & testing set using the package caTools. Do the same for train_iq & train_sj. 
+```{r message=FALSE, warning=FALSE}
+split_iq = sample.split(train_iq$total_cases, SplitRatio = 0.8)
+split_sj = sample.split(train_sj$total_cases, SplitRatio = 0.8)
+iq_training = subset(train_iq, split_iq == TRUE)
+sj_training = subset(train_sj, split_sj == TRUE)
+lm_test_iq = subset(train_iq, split_iq == FALSE)
+lm_test_sj = subset(train_sj, split_sj == FALSE)
+split_df = sample.split(train_df$total_cases, SplitRatio = 0.8) 
+df_training = subset(train_df, split_df == TRUE)
+lm_test_df = subset(train_df, split_df == FALSE) 
+save(iq_training, sj_training, lm_test_sj, lm_test_iq, df_training, lm_test_df, file = "dengue_test_train_split.RData")
+```
+
+
+Fit Multiple Linear Regression to the Training Sets. The independent variables will be the climate features; exclude categorical & class attributes (other than city).  
+
+
+Fit MLR to training set and display summary
+```{r message=FALSE, warning=FALSE}
+mlr_df_regressor <- lm(formula = total_cases ~ ., data = subset(df_training, select = -c(1:4, 26:28)))
+summary(mlr_df_regressor)
+```
+
+
+Fit MLR to San Juan training set and display summary
+```{r message=FALSE, warning=FALSE}
+mlr_sj_regressor<- lm(formula = total_cases ~ ., data = subset(sj_training, select = -c(1:4, 26:28)))
+summary(mlr_sj_regressor)
+```
+
+
+Fit MLR to Iquitos training set and display summary
+```{r message=FALSE, warning=FALSE}
+mlr_iq_regressor<- lm(formula = total_cases ~ ., data = subset(iq_training, select = -c(1:4, 26:28)))
+summary(mlr_iq_regressor)
+```
+
+We have fairly significant variables from our San Juan model. Our adjusted R-squared is very low. Significance of variables are very low among Iquitos. Much poorer value for R-squared. 
+
+
+The last two columns of our summary, the p-value and significance level, is the most important for interpretation. The lower the p-value is, the more impact this independent variable will have on the dependent variable. From our summary, we have very high p-values among our independent variables. It seems that the normalized difference vegetation index features are the most significant. 
+
+
+Let's use our train_df regressor model to predict the splitted Test Set since we've obtained plenty of significant variables
+```{r message=FALSE, warning=FALSE}
+df_mlr_pred <- predict(mlr_df_regressor, newdata = lm_test_df)
+df_mlr_pred
+head(lm_test_df[,c(1:4,25)], n = 10)
+```
+
+Our observations are very off. There will be some fine tuning needing to be done. Our features having very low significance & correlation with total_cases may heavily influence the prediction. We will try other machine learning algorithms to strengthen our predictions. 
+
+### Let's build a more optimal model using Backward Elimination & Forward Elimination
+
+Tsake note of multiple r-squared & adjusted r-squared. Lower AIC => better model
+
+
+Backward Selection
+```{r message=FALSE, warning=FALSE}
+step(mlr_df_regressor, direction = "backward")
+```
+
+
+We fit the selected variables based on the model above. 
+```{r message=FALSE, warning=FALSE}
+mlr_df_back_best <- lm(formula = total_cases ~ ndvi_ne + ndvi_nw + ndvi_se + ndvi_sw + 
+    reanalysis_avg_temp_c + reanalysis_relative_humidity_percent + 
+    reanalysis_specific_humidity_g_per_kg + station_max_temp_c, data = subset(df_training, select = -c(1:4,
+    26:28)))
+summary(mlr_df_back_best)
+df_mlr_pred_back_best <- predict(mlr_df_back_best, newdata = lm_test_df)
+df_mlr_pred_back_best
+head(lm_test_df[,c(1:4,25)], n = 10)
+tail(lm_test_df[,c(1:4,25)], n = 10)
+```
+
+
+Predictions are still off. Adjusted R-squared yielded a value of 0.1304. Linear Regression is not the best model for this. Let's explore other methods; Random Forest & Support Vector Machine. 

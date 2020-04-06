@@ -1,0 +1,390 @@
+---
+title: "DengAI Data Prep & Exploratory Data Analysis"
+author: "Paul Y"
+date: "01/03/2020"
+output: html_document
+---
+
+```{r setup, include=T, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# setwd("G:/My Drive/CAPSTONE/working")
+library(dplyr)
+library(tidyverse)
+library(data.table)
+library(ggcorrplot)
+library(DataExplorer)
+library(corrplot)
+library(RColorBrewer)
+library(devtools)
+library(readr)
+library(rstatix)
+library(plotly)
+library(ggplot2)
+library(zoo)
+library(scales)   # to access breaks/formatting functions
+library(gridExtra) # for arranging plots
+library(Hmisc)
+library(pastecs)
+```
+
+
+## **Part 1: Data cleaning & Initial Analysis** 
+
+```{r message=FALSE, warning=FALSE}
+dengue_train <- read.csv("dengue_features_train.csv", header = T, stringsAsFactors = F)
+dengue_train_labels <- read.csv("dengue_labels_train.csv", header = T, stringsAsFactors = F)
+dengue_test <- read.csv("dengue_features_test.csv", header = T, stringsAsFactors = F)
+```
+
+
+Merge the train & train_labels together. Create a null column total_cases in the testing data. 
+```{r message=FALSE, warning=FALSE}
+dengue_train_merge <- merge(dengue_train, dengue_train_labels, by=c("city","year", "weekofyear"), all = TRUE)
+dengue_test[,"total_cases"] <- NA
+```
+
+
+Get a quick introduction of our datasets
+```{r message=FALSE, warning=FALSE}
+t(introduce(dengue_train_merge)) # Training Set
+t(introduce(dengue_test)) # Test Set
+
+as.data.frame(sapply(dengue_train_merge, class))
+as.data.frame(sapply(dengue_test, class))
+```
+
+
+Column X has all values NA. Let's remove it. We keep all other values.
+```{r message=FALSE, warning=FALSE}
+dengue_train_merge <- dengue_train_merge[!sapply(dengue_train_merge, function(x) all(x == ""))]
+train_dim <- c(nrow(dengue_train_merge), ncol(dengue_train_merge))
+test_dim <- c(nrow(dengue_test), ncol(dengue_test))
+train_dim
+test_dim
+```
+
+### Time for some Data Manipulation
+
+Convert week_start_date to date class. Create columns for year, day, day of the year, month. 
+```{r message=FALSE, warning=FALSE}
+dengue_train_merge$week_start_date <- as.Date(dengue_train_merge$week_start_date)
+dengue_test$week_start_date <- as.Date(dengue_test$week_start_date)
+
+dengue_train_merge$year <- format(dengue_train_merge$week_start_date, "%Y")
+dengue_train_merge$month <- format(dengue_train_merge$week_start_date, "%b")
+dengue_train_merge$day <- format(dengue_train_merge$week_start_date, "%d")
+dengue_train_merge$day_of_year <- format(dengue_train_merge$week_start_date, "%j")
+
+dengue_test$year <- format(dengue_test$week_start_date, "%Y")
+dengue_test$month <- format(dengue_test$week_start_date, "%b")
+dengue_test$day <- format(dengue_test$week_start_date, "%d")
+dengue_test$day_of_year <- format(dengue_test$week_start_date, "%j")
+```
+
+
+Check if there are actually 52 weeks in each year
+```{r message=FALSE, warning=FALSE}
+dengue_train_merge[which(dengue_train_merge$weekofyear == "53"), 1:4]
+dengue_test[which(dengue_test$weekofyear == "53"), 1:4]
+```
+
+
+Upon viewing the data above, we have that the 53rd week of each year is actually the 1st day of each year. Let's try to change these to the 1st week of their respective years to remain consistent with the data. 
+```{r message=FALSE, warning=FALSE}
+dengue_train_merge$weekofyear[dengue_train_merge$weekofyear == "53"] <- "1"
+dengue_test$weekofyear[dengue_test$weekofyear == "53"] <- "1"
+```
+
+
+The following columns are in Kelvin (K): reanalysis_air_temp_k, reanalysis_avg_temp_k, reanalysis_dew_point_temp_k, reanalysis_max_air_temp_k, reanalysis_min_air_temp_k, and reanalysis_tdtr_k. Let's convert them to Centigrade (°C)
+```{r message=FALSE, warning=FALSE}
+for (i in c(10:14, 19)) {dengue_train_merge[,i] <- dengue_train_merge[,i] - 273.15}
+for (i in c(10:14, 19)) {dengue_test[,i] <- dengue_test[,i] - 273.15}
+```
+
+
+Let's now rename these columns using the tidyverse package
+```{r message=FALSE, warning=FALSE}
+dengue_train_merge <- dengue_train_merge %>% 
+  rename(
+    reanalysis_air_temp_c = reanalysis_air_temp_k,
+    reanalysis_avg_temp_c = reanalysis_avg_temp_k,
+    reanalysis_dew_point_temp_c = reanalysis_dew_point_temp_k,
+    reanalysis_max_air_temp_c = reanalysis_max_air_temp_k,
+    reanalysis_min_air_temp_c = reanalysis_min_air_temp_k,
+    reanalysis_tdtr_c = reanalysis_tdtr_k,
+    )
+head(dengue_train_merge, n=2)
+
+dengue_test <- dengue_test %>% 
+  rename(
+    reanalysis_air_temp_c = reanalysis_air_temp_k,
+    reanalysis_avg_temp_c = reanalysis_avg_temp_k,
+    reanalysis_dew_point_temp_c = reanalysis_dew_point_temp_k,
+    reanalysis_max_air_temp_c = reanalysis_max_air_temp_k,
+    reanalysis_min_air_temp_c = reanalysis_min_air_temp_k,
+    reanalysis_tdtr_c = reanalysis_tdtr_k,
+    )
+```
+
+
+Determine number of NAs & Nulls in each dataframe
+```{r message=FALSE, warning=FALSE}
+sum_na <- c(sum(is.na(dengue_train_merge)), sum(is.na(dengue_test)))
+sum_null <- c(sum(is.null(dengue_train_merge)), sum(is.null(dengue_test)))
+sum_na
+sum_null
+```
+Our train data has 548 missing values; test has 535 missing values.
+
+
+Check which columns have NAs in them.
+```{r message=FALSE, warning=FALSE}
+sapply(dengue_train_merge, function(x) sum(is.na(x)))
+sum(is.na(dengue_train_merge$total_cases))
+
+sapply(dengue_test, function(x) sum(is.na(x)))
+```
+In the train data, ndvi columns have the most missing values. The missing values in the climate factors range from 10-40. There are no missing values in total_cases. The column total_cases in the test set has missing columns because that is the variable we are trying to predict. 
+
+
+Determine if there are rows where majority of the climate features are missing. Drop rows with 50% or more NA, just in our training set.
+```{r message=FALSE, warning=FALSE}
+dengue_train_merge <- dengue_train_merge[which(rowMeans(!is.na(dengue_train_merge)) >= 0.5), ]
+```
+
+
+Simply impute the rest of the null rows of the climate features (training set) with the previous non-NA value using the function na.locf()
+```{r message=FALSE, warning=FALSE}
+for (i in c(5:24)) {dengue_train_merge[,i] <- na.locf(dengue_train_merge[,i])}
+sapply(dengue_train_merge, function(x) sum(is.na(x)))
+```
+
+
+Let us subset the training data by city
+```{r message=FALSE, warning=FALSE}
+dengue_iq <- dengue_train_merge %>% filter(city == "iq")
+dengue_sj <- dengue_train_merge %>% filter(city == "sj")
+head(dengue_iq, n=2)
+head(dengue_sj, n=2)
+```
+
+
+Rename datasets. Subset test set by city as well. 
+```{r message=FALSE, warning=FALSE}
+train_df <- dengue_train_merge
+train_iq <- dengue_iq
+train_sj <- dengue_sj
+test_df <- dengue_test
+test_iq <- test_df %>% filter(city == "iq")
+test_sj <- test_df %>% filter(city == "sj")
+```
+
+
+Write these datasets to folder for future working purposes
+```{r message=FALSE, warning=FALSE}
+write.csv(train_df,"train_df.csv", row.names=FALSE)
+write.csv(train_iq,"train_iq.csv", row.names=FALSE)
+write.csv(train_sj,"train_sj.csv", row.names=FALSE)
+write.csv(test_df,"test_df.csv", row.names=FALSE)
+write.csv(test_iq,"test_iq.csv", row.names=FALSE)
+write.csv(test_sj,"test_sj.csv", row.names=FALSE)
+```
+
+
+## **Part 2: Univariate & Bivariate Analysis (EDA)**
+
+Using the pastecs package, call the stat.desc() function, which displays important information about the standard deviation, standard error, variance, coefficient of variation, and confidence interval for mean; also includes basic information found within the summary() function. 
+```{r message=FALSE, warning=FALSE}
+iq_stats <- subset(stat.desc(train_iq), select = c(5:25))
+sj_stats <- subset(stat.desc(train_sj), select = c(5:25))
+iq_stats <- t(format(iq_stats, scientific=F))
+sj_stats <- t(format(sj_stats, scientific=F))
+write.table(iq_stats, "iq_stats.csv",  sep = ",", row.names = T, col.names = T)
+write.table(sj_stats, "sj_stats.csv", sep = ",", row.names = T, col.names = T)
+iq_stats = read.csv("iq_stats.csv", header = T)
+sj_stats = read.csv("sj_stats.csv", header = T)
+iq_stats <- as.data.frame(iq_stats)
+sj_stats <- as.data.frame(sj_stats)
+```
+
+Let's focus on our response variable, total_cases 
+```{r message=FALSE, warning=FALSE}
+iq_stats[c("total_cases"),]
+sj_stats[c("total_cases"),]
+```
+
+Let's plot some graphics detailing climate features between the cities of San Juan & Iquitos. 
+
+Plot frequency of our target variable total_cases by year in the training, Iquitos training, and San Juan training set. There are no records of total_cases in our testing sets, and thus, we cannot create plots from test_df, test_iq, & test_sj.  
+```{r message=FALSE, warning=FALSE}
+cases_train_df <- ggplot(data = train_df, aes(x = week_start_date, y = total_cases, color = city)) +
+  geom_line() +
+  labs(x = "Year",
+    y = "Total Cases",
+    title = "Time Series of Total Cases in Training Set by Year",
+    subtitle = "")
+cases_train_df + scale_x_date(date_breaks = "1 year", date_labels = "%y") + scale_y_continuous(breaks=seq(0, 475, 25)) + theme_classic()
+
+cases_train_iq <- ggplot(data = train_iq, aes(x = week_start_date, y = total_cases)) +
+  geom_point(color = "red") +
+  labs(x = "Year",
+    y = "Total Cases",
+    title = "Scatterplot of Total Cases in Iquitos Training Set by Year",
+    subtitle = "")
+cases_train_iq + scale_x_date(date_breaks = "1 year", date_labels = "%y") + scale_y_continuous(breaks=seq(0, 200, 10))
+
+
+cases_train_sj <- ggplot(data = train_sj, aes(x = week_start_date, y = total_cases)) +
+  geom_point(color = "cyan3") +
+  labs(x = "Year",
+    y = "Total Cases",
+    title = "Scatterplot of Total Cases in San Juan Training Set by Year",
+    subtitle = "")
+cases_train_sj + scale_x_date(date_breaks = "1 year", date_labels = "%y") + scale_y_continuous(breaks=seq(0, 475, 25))
+```
+
+Upon viewing the plots above, we can make some assumptions. Note that the splitted city plots do not indicate the frequency of cases, but rather each dot representing the day of the year and its respective case count in that timeframe. There has been a spike of cases around Q3 of 1994, with the highest number of cases reported around the 460 mark. Around this time, there are somewhat "jumps" in data. Between 2000-2010, there has been a surge of reported cases between the two cities, with majority of the numbers in double digits. We see an increase total cases between 2005-2006 and 2007-2008. 
+
+In Iquitos, case numbers are steady in the early 2000s. The number of cases in the city fall under 120, with two instances of case numbers above 70 in 2005. There have been a steady number of cases around 2008-2009. In San Juan, case numbers are much higher. This correlates with the fact that the disease carrier mosquitoes favor freshwater areas and saline waters for breeding sites, as mentioned in the paper; San Juan is located in coastal Puerto Rico. The highest reported number of cases in the city were between 1994-1995, with one day reporting 460 cases. Between 1995-1998, a steady number of low cases are reported. Around 1998-1999, a spike in case numbers on a given day rise. In the early to mid 2000s, the frequency of cases on any given day increase, but numbers per day are not as high as previously. 2005-2008 see case numbers moderately spike. 
+
+
+We can try plotting a time series of one of the climate features, reanalysis_air_temp_c (the Mean Air Temperature), and try to reach a hypotheseis about our data that can support concluding statements of prediciting the number of cases in the test set. 
+```{r message=FALSE, warning=FALSE}
+airtemp_train_df <- ggplot(data = train_df, aes(x = week_start_date, y = reanalysis_air_temp_c, color = city)) +
+  geom_line() +
+  labs(x = "Year",
+    y = "Mean Air Temperature (°C)",
+    title = "Time Series Analysis of Mean Air Temperature (°C) in \n Iquitos, Peru & San Juan, Puerto Rico (Train Set)",
+    subtitle = "")
+airtemp_train_df + scale_x_date(date_breaks = "1 year", date_labels = "%y") + scale_y_continuous(breaks=seq(0, 30, 0.5)) + theme_classic()
+
+
+airtemp_test_df <- ggplot(data = test_df, aes(x = week_start_date, y = reanalysis_air_temp_c, color = city)) +
+  geom_line() +
+  labs(x = "Year",
+    y = "Mean Air Temperature (°C)",
+    title = "Time Series Analysis of Mean Air Temperature (°C) in \n Iquitos, Peru & San Juan, Puerto Rico (Test Set)",
+    subtitle = "")
+airtemp_test_df + scale_x_date(date_breaks = "1 year", date_labels = "%y") + scale_y_continuous(breaks=seq(0, 30, 0.5)) + theme_classic() 
+```
+
+The time series analysis of mean air temperature (°C) in the training set shows us that San Juan achieves higher air temperature compared to Iquitos. 
+
+
+Let's plot a time series analysis of Mean Specific Humidity (vapour g/air kg) in train & test set. 
+```{r message=FALSE, warning=FALSE}
+hum_train_df <- ggplot(data = train_df, aes(x = week_start_date, y = reanalysis_specific_humidity_g_per_kg, color = city)) +
+  geom_line() +
+  labs(x = "Year",
+    y = "Mean Specific Humidity (vapour g/air kg)",
+    title = "Time Series Analysis of Mean Specific Humidity in \n Iquitos, Peru & San Juan, Puerto Rico (Train Set)",
+    subtitle = "")
+hum_train_df + scale_x_date(date_breaks = "1 year", date_labels = "%y") + scale_y_continuous(breaks=seq(0, 21, 0.5)) + theme_classic() 
+
+
+hum_test_df <- ggplot(data = test_df, aes(x = week_start_date, y = reanalysis_specific_humidity_g_per_kg, color = city)) +
+  geom_line() +
+  labs(x = "Year",
+    y = "Mean Specific Humidity (vapour g/air kg)",
+    title = "Time Series Analysis of Mean Specific Humidity in \n Iquitos, Peru & San Juan, Puerto Rico (Test Set)",
+    subtitle = "")
+hum_test_df + scale_x_date(date_breaks = "1 year", date_labels = "%y") + scale_y_continuous(breaks=seq(0, 21, 0.5)) + theme_classic() 
+```
+
+
+### Time for some correlation analysis 
+
+Let's visualize the correlation matrix in our training set. Focus on the total_cases variable. 
+```{r message=FALSE, warning=FALSE}
+cor.mat.train_df <- cor(train_df[, c(5:25)], use = "complete.obs")
+corrplot(cor.mat.train_df, tl.cex = 0.7, title = "Training Set Correlation", mar=c(0,0,1,0))
+
+cor.mat.test_df <- cor(test_df[, c(5:24)], use = "complete.obs") # Remove NAs
+corrplot(cor.mat.test_df, tl.cex = 0.7, title = "Test Set Correlation - no total_cases", mar=c(0,0,1,0))
+```
+
+
+Correlate total_cases with climate features in the Iquitos and San Juan training sets. 
+```{r message=FALSE, warning=FALSE}
+cor.mat.train_iq <- cor(train_iq[, c(5:25)], use = "complete.obs")
+corrplot(cor.mat.train_iq, title = "Iquitos Correlation (Train)", mar=c(0,0,1,0), tl.cex = 0.7) # Iquitos correlation
+cor.mat.train_iq.df <- as.data.frame(cor.mat.train_iq) 
+cor.iq <- as.data.frame(cbind(total_cases_cor_iq = cor.mat.train_iq.df$total_cases, features_iq = colnames(cor.mat.train_iq.df[,1:ncol(cor.mat.train_iq.df)]))) # determine total_cases correlation values with other climate features in Iquitos 
+cor.iq$total_cases_cor_iq <-as.numeric(as.character(cor.iq[,1])) 
+cor.iq %>% 
+   arrange(desc(abs(cor.iq$total_cases_cor_iq)))
+
+
+cor.mat.train_sj <- cor(train_sj[, c(5:25)], use = "complete.obs")
+corrplot(cor.mat.train_sj, title = "San Juan Correlation (Train)", mar=c(0,0,1,0), tl.cex = 0.7) # San Juan correlation
+cor.mat.train_sj.df <- as.data.frame(cor.mat.train_sj)
+cor.sj <- as.data.frame(cbind(total_cases_cor_sj = cor.mat.train_sj.df$total_cases, features_sj = colnames(cor.mat.train_sj.df[,1:ncol(cor.mat.train_sj.df)]))) # determine total_cases correlation values with other climate features in San Juan
+cor.sj$total_cases_cor_sj <-as.numeric(as.character(cor.sj[,1])) 
+cor.sj %>% 
+   arrange(desc(abs(cor.sj$total_cases_cor_sj)))
+```
+
+We sort the total_cases correlation in Iquitos and San Juan training set by the highest absolute values. Visually, we don't have very strong features that correlate well with total_cases. 
+
+
+Let's make our analysis stronger by extracting significance levels (p-values) using package Hmisc: Harrell Miscellaneous. 
+```{r message=FALSE, warning=FALSE}
+rcorr_iq <- rcorr(as.matrix(train_iq[, c(5:25)]))
+rcorr_sj <- rcorr(as.matrix(train_sj[, c(5:25)]))
+```
+
+
+We will be using a function to format the correlation matrix, which displays the correlation and p-value in a neat dataframe. 
+```{r message=FALSE, warning=FALSE}
+# ++++++++++++++++++++++++++++
+# flattenCorrMatrix
+# ++++++++++++++++++++++++++++
+# cormat : matrix of the correlation coefficients
+# pmat : matrix of the correlation p-values
+flattenCorrMatrix <- function(cormat, pmat) {
+  ut <- upper.tri(cormat)
+  data.frame(
+    row = rownames(cormat)[row(cormat)[ut]],
+    column = rownames(cormat)[col(cormat)[ut]],
+    cor  =(cormat)[ut],
+    p = pmat[ut]
+    )
+}
+```
+
+
+Extract the p-values & correlation from both cities with target variable total_cases. We sort the dataset by ascending p-value. Features with lower p-values implies higher significance of the predictor variable in correlation with the target variable. 
+```{r message=FALSE, warning=FALSE}
+IQ <- flattenCorrMatrix(rcorr_iq$r, rcorr_iq$P) 
+sub_iq <- subset(IQ , column=="total_cases") 
+sub_iq[order(sub_iq$p), ]# Sort Iquitos training set by ascending p-values
+
+SJ <- flattenCorrMatrix(rcorr_sj$r, rcorr_sj$P) 
+sub_sj <- subset(SJ , column=="total_cases") 
+sub_sj[order(sub_sj$p), ] # Sort San Juan training set by ascending p-values
+
+# you can use the function attach(df) so that the database is searched by R when evaluating a variable; no need to specify df$col_name in a function, just simply give the col_name.
+```
+
+One thing to conclude from this analysis is that the normalized difference vegetation index (NDVI) features have very low correlation & a high p-value towards our target variable. We can first fit these variables to our model in the next stage & compare it with a new model excluding these features, and compare the accuracy of both models. Their signficance may differ when we run our regression models. 
+
+Overall, our features here do not have strong correlation with our total_cases. 
+
+Let's plot the response variable (total_cases) against the climate features Iquitos training set.
+```{r message=FALSE, warning=FALSE}
+par(mfrow=c(2,3))
+for (i in c(5:25)) {plot(train_iq$total_cases ~ train_iq[,i], xlab = colnames(train_iq)[i], ylab = "total_cases", pch = 1, col = 'darkcyan')
+abline(reg=lm(train_iq$total_cases ~ train_iq[,i]), col = 'red')}
+```
+
+
+Do the same for San Juan train set. 
+```{r message=FALSE, warning=FALSE}
+par(mfrow=c(2,3))
+for (i in c(5:25)) {plot(train_sj$total_cases ~ train_sj[,i], xlab = colnames(train_sj)[i], ylab = "total_cases", pch = 1, col = 'orange')
+abline(reg=lm(train_sj$total_cases ~ train_sj[,i]), col = 'red')}
+```
+
+
+We split our training set by city, and plot the relationship of each climate variable against the response variable total_cases with a fitted line. Overall, each plot shows us very weak fits among the dependent variable; the data is very dispersed.

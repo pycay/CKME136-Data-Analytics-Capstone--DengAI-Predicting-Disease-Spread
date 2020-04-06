@@ -1,0 +1,109 @@
+---
+title: "DengAI Support Vector Machine"
+author: "Paul Y"
+date: "03/04/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# setwd("G:/My Drive/CAPSTONE/working")
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(tidyverse)
+library(devtools)
+library(caTools)
+library(e1071)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+train_df <- read.csv("train_df.csv", header = T, stringsAsFactors = F)
+train_iq <- read.csv("train_iq.csv", header = T, stringsAsFactors = F)
+train_sj <- read.csv("train_sj.csv", header = T, stringsAsFactors = F)
+test_df <- read.csv("test_df.csv", header = T, stringsAsFactors = F)
+test_iq <- read.csv("test_iq.csv", header = T, stringsAsFactors = F)
+test_sj <- read.csv("test_sj.csv", header = T, stringsAsFactors = F)
+submissions = read.csv("submission_format.csv", header = T, stringsAsFactors = F)
+```
+
+
+
+Load splitted test & training sets. 
+```{r message=FALSE, warning=FALSE}
+load("dengue_test_train_split.RData")
+```
+
+
+## Support Vector Machine 
+
+SVM algorithm tries to plot all the data in an n-dimensional hyper plane and try to draw the boundary between the classes based on Support Vector machines.
+
+Support vector Machines are nothing but the data points which lies near to the boundary with a maximum distance between the data points.
+
+Load library e1071. Epsilon and cost are parameters we can set for SVM. We are trying the grid approach to build multiple models at a time so that we can pick the best model from all the developed models.
+
+### Practice the model on train_df. 
+```{r message=FALSE, warning=FALSE}
+tuneResult <- tune(svm,total_cases ~ ., data = subset(df_training, select = -c(1:4, 26:28)),
+                   ranges = list(epsilon = seq(0,0.2,0.05), cost = 2^(2:9))
+)
+print(tuneResult)
+# Draw the tuning graph - IF the colour density is high, it indicates strong models and if its pale, we can still build better models.
+plot(tuneResult)
+
+tunedModel_df <- tuneResult$best.model
+```
+
+
+```{r message=FALSE, warning=FALSE}
+# As we have selected best model, we are predicting the outcomes.
+tunedModel_df_test <- predict(tunedModel_df,lm_test_df) 
+error1 <- tunedModel_df_test - lm_test_df$total_cases 
+# MSE
+print(mean(error1^2))
+```
+
+### Practice the model on San Juan Training
+```{r message=FALSE, warning=FALSE}
+tuneResult1 <- tune(svm,total_cases ~ ., data = subset(sj_training, select = -c(1:4, 26:28)),
+                   ranges = list(epsilon = seq(0,0.2,0.05), cost = 2^(2:9))
+)
+print(tuneResult1)
+# Draw the tuning graph
+plot(tuneResult1)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+tunedModel_sj <- tuneResult1$best.model
+tunedModel_sj_test <- predict(tunedModel_sj,lm_test_sj) 
+error2 <- tunedModel_sj_test - lm_test_sj$total_cases 
+print(mean(error2^2))
+```
+
+### Practice the model on Iquitos Training
+```{r message=FALSE, warning=FALSE}
+tuneResult2 <- tune(svm,total_cases ~ ., data = subset(iq_training, select = -c(1:4, 26:28)),
+                    ranges = list(epsilon = seq(0,0.2,0.05), cost = 2^(2:9))
+)
+print(tuneResult2)
+# Draw the tuning graph
+plot(tuneResult2)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+tunedModel_iq <- tuneResult2$best.model
+tunedModel_iq_test <- predict(tunedModel_iq,lm_test_iq) 
+error3 <- tunedModel_iq_test - lm_test_iq$total_cases 
+print(mean(error3^2))
+```
+
+
+Save our models to a file called dengue_SVM
+```{r message=FALSE, warning=FALSE}
+save(tunedModel_df, tunedModel_sj, tunedModel_iq, tunedModel_df_test, tunedModel_sj_test, tunedModel_iq_test, file = "dengue_SVM.RData")
+```
+
+
+### We validate our models in "DengAI Best Model Validation & Submission.RMD"

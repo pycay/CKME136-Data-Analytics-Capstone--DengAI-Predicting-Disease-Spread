@@ -1,0 +1,194 @@
+---
+title: "DengAI Random Forest"
+author: "Paul Y"
+date: "03/04/2020"
+output: html_document
+---
+
+```{r setup, include=T, message=FALSE, warning=FALSE}
+# setwd("G:/My Drive/CAPSTONE/working")
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(tidyverse)
+library(devtools)
+library(readr)
+library(caTools)
+library(randomForest)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+train_df <- read.csv("train_df.csv", header = T, stringsAsFactors = F)
+train_iq <- read.csv("train_iq.csv", header = T, stringsAsFactors = F)
+train_sj <- read.csv("train_sj.csv", header = T, stringsAsFactors = F)
+test_df <- read.csv("test_df.csv", header = T, stringsAsFactors = F)
+test_iq <- read.csv("test_iq.csv", header = T, stringsAsFactors = F)
+test_sj <- read.csv("test_sj.csv", header = T, stringsAsFactors = F)
+submissions = read.csv("submission_format.csv", header = T, stringsAsFactors = F)
+```
+
+
+Load splitted test & training sets. 
+```{r message=FALSE, warning=FALSE}
+load("dengue_test_train_split.RData")
+```
+
+
+## Random Forest  
+
+Random forest is a bagging algorithm which creates multiple Decision trees by selecting few of the variables randomly.
+
+It simultanesously develops multiple trees in combination and finally averages the error to bring out the best possible results
+
+We will apply Random forest on the entire train_df dataset. This is a basic Random Forest Model which has created 500 trees & selected 6 independent variables randomly. 
+```{r message=FALSE, warning=FALSE}
+rf_df_regressor = randomForest(total_cases ~ ., data = subset(df_training, select = -c(1:4, 26:28)))
+print(rf_df_regressor)
+```
+
+
+Plotting the model will help us identify the optimal number of trees. We then identify the model of the optimal number of trees which has least Mean Squared Error. 
+```{r message=FALSE, warning=FALSE}
+plot(rf_df_regressor)
+n1 = which.min(rf_df_regressor$mse)
+n1
+```
+
+
+Use this optimal tree number to prune the model. #Pruning is a technique in machine learning and search algorithms that reduces the size of decision trees by removing sections of the tree that provide little power to classify instances. Pruning reduces the complexity of the final classifier, and hence improves predictive accuracy by the reduction of overfitting. 
+
+If we are not able to see great improvement in model performance, we can try Feature Selection based on Node purity. VarImp Plot will help us to understand the Variables with best node purity.
+```{r message=FALSE, warning=FALSE}
+rf_df_regressor2 = randomForest(total_cases ~ ., data = subset(df_training, select = -c(1:4, 26:28)), ntree = n1)
+print(rf_df_regressor2)
+
+varImpPlot(rf_df_regressor2, main = "Variable Importance Plot Train DF- PSA Score")
+importance(rf_df_regressor2)
+rf_df_imp <- importance(rf_df_regressor2)
+```
+
+After building this RF algorithm, it tries to fit the model to the data, which may cause overfitting. As the model has generated 500 trees, it may generate a higher MSE. We developed this model according to the number of trees generating the least MSE.
+
+Return 6 variables with the highest Node Purity, and call it to the regressor model. 
+```{r message=FALSE, warning=FALSE}
+rf_df_imp<-cbind(variables=rownames(rf_df_imp),as.data.frame(rf_df_imp))
+str(rf_df_imp)
+a=rf_df_imp[order(-rf_df_imp$IncNodePurity),]
+count<-0
+input<- a[1,1]
+for (i in seq(2,6)){
+  input<-paste(input,a[i,1],sep="+")
+  count=count+1
+}
+count
+input
+rf_df_imp_top6 <- as.formula(paste("total_cases~",input,sep=" "))
+rf_df_imp_top6
+```
+
+
+As the mean square error doesn't improve much, we will go for important variables based on Node Purity (indicates the ease of identifying the variable to a class or value). We use the top 6 variables in our previous model. Note that these values are randomized after each run, and thus, we cannot manually input the independent features everytime the model is trained: 
+```{r message=FALSE, warning=FALSE}
+rf_df_imp_top6
+rf_df_regressor3 = randomForest(rf_df_imp_top6, data = subset(df_training, select = -c(1:4, 26:28)))
+print(rf_df_regressor3)
+```
+
+
+#### In the same way, we apply our Random forest technique to the training datasets split by city.
+
+#### Fit the model on San Juan
+```{r message=FALSE, warning=FALSE}
+rf_sj_regressor<- randomForest(total_cases ~ ., data = subset(sj_training, select = -c(1:4, 26:28)))
+print(rf_sj_regressor)
+plot(rf_sj_regressor)
+n2 = which.min(rf_sj_regressor$mse)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+rf_sj_regressor2 = randomForest(total_cases ~ ., data = subset(sj_training, select = -c(1:4, 26:28)),ntree=n2)
+print(rf_sj_regressor2)
+varImpPlot(rf_sj_regressor, main="Variable Importance Plot San Juan - PSA Score")
+importance(rf_sj_regressor2)
+rf_sj_imp <- importance(rf_sj_regressor2)
+```
+
+Return 6 variables with the highest Node Purity, and call it to the regressor model. 
+```{r message=FALSE, warning=FALSE}
+rf_sj_imp<-cbind(variables=rownames(rf_sj_imp),as.data.frame(rf_sj_imp))
+str(rf_sj_imp)
+a=rf_sj_imp[order(-rf_sj_imp$IncNodePurity),]
+count<-0
+input<- a[1,1]
+for (i in seq(2,6)){
+  input<-paste(input,a[i,1],sep="+")
+  count=count+1
+}
+count
+input
+rf_sj_imp_top6 <- as.formula(paste("total_cases~",input,sep=" "))
+rf_sj_imp_top6
+```
+
+
+```{r message=FALSE, warning=FALSE}
+rf_sj_imp_top6
+rf_sj_regressor3 = randomForest(rf_sj_imp_top6, data = subset(sj_training, select = -c(1:4, 26:28)))
+print(rf_sj_regressor3)
+```
+
+
+
+#### Fit the model on Iquitos
+```{r message=FALSE, warning=FALSE}
+rf_iq_regressor<-  randomForest(total_cases ~ ., data = subset(iq_training, select = -c(1:4, 26:28)))
+print(rf_iq_regressor)
+plot(rf_iq_regressor)
+n3 = which.min(rf_iq_regressor$mse)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+rf_iq_regressor2<-  randomForest(total_cases ~ ., data = subset(iq_training, select = -c(1:4, 26:28)),ntree=203)                              
+print(rf_iq_regressor2)
+varImpPlot(rf_iq_regressor2, main="Variable Importance Plot Iquitos - PSA Score")
+importance(rf_iq_regressor2)
+rf_iq_imp <- importance(rf_iq_regressor2)
+```
+
+
+Return 6 variables with the highest Node Purity, and call it to the regressor model. 
+```{r message=FALSE, warning=FALSE}
+rf_iq_imp<-cbind(variables=rownames(rf_iq_imp),as.data.frame(rf_iq_imp))
+str(rf_iq_imp)
+a=rf_iq_imp[order(-rf_iq_imp$IncNodePurity),]
+count<-0
+input<- a[1,1]
+for (i in seq(2,6)){
+  input<-paste(input,a[i,1],sep="+")
+  count=count+1
+}
+count
+input
+rf_iq_imp_top6 <- as.formula(paste("total_cases~",input,sep=" "))
+rf_iq_imp_top6
+```
+
+
+
+```{r message=FALSE, warning=FALSE}
+rf_iq_imp_top6
+rf_iq_regressor3 = randomForest(rf_iq_imp_top6, data = subset(iq_training, select = -c(1:4, 26:28)))
+print(rf_iq_regressor3)
+```
+
+
+
+Save our models to a file called dengue_random_forest
+```{r message=FALSE, warning=FALSE}
+save(rf_df_regressor, rf_df_regressor2, rf_df_regressor3, rf_sj_regressor, rf_sj_regressor2, rf_sj_regressor3, rf_iq_regressor, rf_iq_regressor2, rf_iq_regressor3, file = "dengue_random_forest.RData")
+```
+
+## We validate our models in "DengAI Best Model Validation & Submission.RMD"
+

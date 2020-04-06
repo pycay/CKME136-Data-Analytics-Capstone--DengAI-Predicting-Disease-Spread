@@ -1,0 +1,331 @@
+---
+title: "DengAI Best Model Validation & Submission"
+author: "Paul Y"
+date: "04/04/2020"
+output: html_document
+---
+
+```{r setup, include=T, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# setwd("G:/My Drive/CAPSTONE/working")
+library(dplyr)
+library(tidyverse)
+library(tidyr)
+library(data.table)
+library(ggcorrplot)
+library(corrplot)
+library(RColorBrewer)
+library(devtools)
+library(readr)
+library(plotly)
+library(ggplot2)
+library(zoo)
+library(rstatix)
+library(scales)   # to access breaks/formatting functions
+library(gridExtra) # for arranging plots
+library(Hmisc)
+library(randomForest)
+library(mlbench)
+library(e1071)
+library(ggfortify)
+library(pastecs)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+test_df <- read.csv("test_df.csv", header = T, stringsAsFactors = F)
+submission = read.csv("submission_format.csv", header = T, stringsAsFactors = F)
+```
+
+
+Load splitted test & training sets. Load Random Forest & SVM data. Impute test_df NAs with previous non-NA value using na.locf()
+```{r message=FALSE, warning=FALSE}
+load("dengue_test_train_split.RData")
+load("dengue_random_forest.RData")
+load("dengue_SVM.RData")
+test_df <- select(test_df, -c(total_cases))
+for (i in c(5:24)) {test_df[,i] <- na.locf(test_df[,i])}
+test_iq <- test_df %>% filter(city == "iq")
+test_sj <- test_df %>% filter(city == "sj")
+```
+
+
+## Random Forest Validation
+
+Validation on lm_test_df from basic Random Forest created on train_df
+```{r message=FALSE, warning=FALSE}
+rf_df_test = predict(rf_df_regressor, newdata=lm_test_df)
+resid_df_test = rf_df_test - lm_test_df$total_cases
+
+#Calculate MSE on lm_test_df dataset
+mse_df <- print(mean(resid_df_test^2))
+```
+
+
+Validation on lm_test_df for model based on the number of trees generating the least MSE
+```{r message=FALSE, warning=FALSE}
+rf_df_test2 = predict(rf_df_regressor2, newdata=lm_test_df)
+resid_df_test2 = rf_df_test2 - lm_test_df$total_cases
+
+#Calculate MSE on lm_test_df dataset
+mse2_df <- print(mean(resid_df_test2^2))
+```
+
+Validation on lm_test_df based on the number of trees generating the least MSE & top 6 variables based on Node Purity
+```{r message=FALSE, warning=FALSE}
+rf_df_test3 = predict(rf_df_regressor3, newdata=lm_test_df)
+resid_df_test3 = rf_df_test3 - lm_test_df$total_cases
+mse3_df <- print(mean(resid_df_test3^2))
+```
+
+### Similarly, we implement the validation on the datsets split by city.
+
+### San Juan validation
+
+1st regressor
+```{r message=FALSE, warning=FALSE}
+rf_sj_test = predict(rf_sj_regressor, newdata=lm_test_sj)
+resid_sj_test = rf_sj_test - lm_test_sj$total_cases
+mse_sj <- print(mean(resid_sj_test^2))
+```
+
+2nd regressor
+```{r message=FALSE, warning=FALSE}
+rf_sj_test2 = predict(rf_sj_regressor2, newdata=lm_test_sj)
+resid_sj_test2 = rf_sj_test2 - lm_test_sj$total_cases
+mse2_sj <- print(mean(resid_sj_test2^2))
+```
+
+3rd regressor
+```{r message=FALSE, warning=FALSE}
+rf_sj_test3 = predict(rf_sj_regressor3, newdata=lm_test_sj)
+resid_sj_test3 = rf_sj_test3 - lm_test_sj$total_cases
+mse3_sj <- print(mean(resid_sj_test3^2))
+```
+
+### Iquitos validation
+
+1st regressor
+```{r message=FALSE, warning=FALSE}
+rf_iq_test = predict(rf_iq_regressor, newdata=lm_test_iq)
+resid_iq_test = rf_iq_test - lm_test_iq$total_cases
+mse_iq <- print(mean(resid_iq_test^2))
+```
+
+2nd regressor
+```{r message=FALSE, warning=FALSE}
+rf_iq_test2 = predict(rf_iq_regressor2, newdata=lm_test_iq)
+resid_iq_test2 = rf_iq_test2 - lm_test_iq$total_cases
+mse2_iq <- print(mean(resid_iq_test2^2))
+```
+
+3rd regressor 
+```{r message=FALSE, warning=FALSE}
+rf_iq_test3 = predict(rf_iq_regressor3, newdata=lm_test_iq)
+resid_iq_test3 = rf_iq_test3 - lm_test_iq$total_cases
+mse3_iq <- print(mean(resid_iq_test3^2))
+```
+
+
+### SVM Validation
+
+train_df error
+```{r message=FALSE, warning=FALSE}
+# As we have selected best model, we are predicting the outcomes.
+# tunedModel_df_test <- predict(tunedModel_df,lm_test_df) 
+error1 <- tunedModel_df_test - lm_test_df$total_cases 
+# MSE
+mse_svm_df <- print(mean(error1^2))
+```
+
+train_sj error 
+```{r message=FALSE, warning=FALSE}
+# tunedModel_sj <- tuneResult1$best.model
+# tunedModel_sj_test <- predict(tunedModel_sj,lm_test_sj) 
+error2 <- tunedModel_sj_test - lm_test_sj$total_cases 
+mse_svm_sj <- print(mean(error2^2))
+```
+
+
+train_iq error 
+```{r message=FALSE, warning=FALSE}
+# tunedModel_iq <- tuneResult2$best.model
+# tunedModel_iq_test <- predict(tunedModel_iq,lm_test_iq) 
+error3 <- tunedModel_iq_test - lm_test_iq$total_cases 
+mse_svm_iq <- print(mean(error3^2))
+```
+
+Create a dataframe for including the model name & its respective MSE score. Display the models by ascending MSE score 
+```{r message=FALSE, warning=FALSE}
+test_df_val <- data.frame(c('rf_df_regressor', 'rf_df_regressor2', 'rf_df_regressor3', 'rf_iq_regressor', 'rf_iq_regressor2', 'rf_iq_regressor3', 'rf_sj_regressor', 'rf_sj_regressor2', 'rf_sj_regressor3', 'tunedModel_df', 'tunedModel_iq', 'tunedModel_sj'), c(mse_df, mse2_df, mse3_df, mse_iq, mse2_iq, mse3_iq, mse_sj, mse2_sj, mse3_sj, mse_svm_df, mse_svm_iq, mse_svm_sj))
+names(test_df_val) <- c('Model', 'MSE')
+test_df_val[order(test_df_val$MSE),]
+```
+
+rf_iq_regressor (Random Forest Regressor 1 for Iquitos) is the best model for predicting in the Iquitos test set. rf_sj_regressor2 (Random Forest Regressor 2 for San Juan) is the best model for predicting in the San Juan test set. rf_df_regressor3 (Random Forest Regressor 3 for Entire set) is the best model for predicting the entire test set. 
+
+
+### We pick the best model for the entire Test data (no city subsets) generated by both Random forest and SVM models. 
+
+We have rf_df_regressor3 model as the best prediction on the entire Test Set because it has produced the lease MSE
+```{r message=FALSE, warning=FALSE}
+rf_df_testfinal = predict(rf_df_regressor3, newdata=test_df)
+
+test_df_rf = cbind(test_df,rf_df_testfinal)
+test_df_rf$rf_df_testfinal <- ceiling(test_df_rf$rf_df_testfinal)
+test_df_rf <- test_df_rf %>% 
+  rename(
+    total_cases = rf_df_testfinal
+    )
+head(test_df_rf[,c(1:4,28)], n = 3)
+```
+
+
+SVM prediction on entire test set 
+```{r message=FALSE, warning=FALSE}
+tunedModel_df_testfinal <- predict(tunedModel_df,newdata=test_df)
+test_df_svm= cbind(test_df,tunedModel_df_testfinal)
+test_df_svm$tunedModel_df_testfinal <- ceiling(test_df_svm$tunedModel_df_testfinal)
+test_df_svm <- test_df_svm %>% 
+  rename(
+    total_cases = tunedModel_df_testfinal
+    )
+head(test_df_svm[,c(1:4,28)], n = 3)
+```
+
+Best model for San Juan derived from Random Forest: rf_sj_regressor2
+```{r message=FALSE, warning=FALSE}
+tunedModel_sj_test <- predict(rf_sj_regressor2, newdata = test_sj) 
+
+test_sj_rf = cbind(test_sj,tunedModel_sj_test)
+test_sj_rf$total_cases<- tunedModel_sj_test
+test_sj_rf <- select(test_sj_rf, -c(tunedModel_sj_test, month, day, day_of_year))
+test_sj_rf$total_cases <- ceiling(test_sj_rf$total_cases)
+head(test_sj_rf[,c(1:4,25)], n = 3)
+```
+
+
+Best model for Iquitos derived from Random Forest: rf_iq_regressor
+```{r message=FALSE, warning=FALSE}
+tunedModel_iq_test <- predict(rf_iq_regressor,test_iq) 
+
+test_iq_rf=cbind(test_iq,tunedModel_iq_test)
+test_iq_rf$total_cases<- tunedModel_iq_test
+test_iq_rf <- select(test_iq_rf, -c(tunedModel_iq_test, month, day, day_of_year))
+test_iq_rf$total_cases <- ceiling(test_iq_rf$total_cases)
+head(test_iq_rf[,c(1:4,25)], n = 3)
+```
+
+
+Combining the data for both cities into a data frame
+```{r message=FALSE, warning=FALSE}
+test_combineddf_rf = rbind(test_sj_rf,test_iq_rf)
+head(test_combineddf_rf[,c(1:4, 25)], n = 3)
+tail(test_combineddf_rf[,c(1:4, 25)], n = 3)
+```
+
+
+Finally, submission based on the best model from Random Forest developed on entire train_df dataset 
+```{r message=FALSE, warning=FALSE}
+submission1 <- submission[ ,1:3] # submission based on the best model from Random Forest developed on entire train_df dataset
+submission1$total_cases<- rf_df_testfinal
+submission1$total_cases <- ceiling(submission1$total_cases)
+head(submission1, n = 3)
+tail(submission1, n = 3)
+```
+
+
+Submission based on the best model from SVM developed on entire train_df dataset
+```{r message=FALSE, warning=FALSE}
+submission2<-submission[ ,1:3] # submission based on the best model from SVM developed on entire train_df dataset
+submission2$total_cases <- tunedModel_df_testfinal
+submission2$total_cases <- ceiling(submission2$total_cases)
+head(submission2, n = 3)
+tail(submission2, n = 3)
+```
+
+
+Submission by merging best outcomes from lm_test_sj and lm_test_iq (Random Forest)
+```{r message=FALSE, warning=FALSE}
+submission3<- submission[ ,1:3] # submission by merging best outcomes from lm_test_sj and lm_test_iq
+submission3$total_cases<-test_combineddf_rf$total_cases
+submission3$total_cases <- ceiling(submission3$total_cases)
+head(submission3, n = 3)
+tail(submission3, n = 3)
+```
+
+
+
+Save submissions 
+```{r message=FALSE, warning=FALSE}
+write.csv(submission1,"submission1.csv", row.names=FALSE)
+write.csv(submission2,"submission2.csv", row.names=FALSE)
+write.csv(submission3,"submission3.csv", row.names=FALSE)
+```
+
+
+
+Plot for total_cases predicted by Year using the best Random Forest prediction on entire Test set
+```{r message=FALSE, warning=FALSE}
+test_df_rf$week_start_date <- as.Date(test_df_rf$week_start_date)
+
+cases_test_df <- ggplot(data = test_df_rf, aes(x = week_start_date, y = total_cases, color = city)) +
+  geom_line() +
+  labs(x = "Year",
+       y = "Total Cases",
+       title = "Time Series of Total Cases Prediction in Test Set (Random Forest)",
+       subtitle = "")
+cases_test_df + scale_x_date(date_breaks = "1 year", date_labels = "%y") + scale_y_continuous(breaks=seq(0, 125, 5)) 
+```
+
+
+Plot for total_cases predicted by Year from merged cities using Random Forest 
+```{r message=FALSE, warning=FALSE}
+test_combineddf_rf$week_start_date <- as.Date(test_df_rf$week_start_date)
+
+cases_merged_df <- ggplot(data = test_combineddf_rf, aes(x = week_start_date, y = total_cases, color = city)) +
+  geom_line() +
+  labs(x = "Year",
+       y = "Total Cases",
+       title = "Time Series of Total Cases Prediction From Merged Cities (Random Forest)",
+       subtitle = "")
+cases_merged_df + scale_x_date(date_breaks = "1 year", date_labels = "%y") + scale_y_continuous(breaks=seq(0, 125, 5)) 
+```
+
+
+Plot for total_cases predicted by Year using the best SVM prediction on entire Test set
+```{r message=FALSE, warning=FALSE}
+test_df_svm$week_start_date <- as.Date(test_df_svm$week_start_date)
+
+cases_svm_df <- ggplot(data = test_df_svm, aes(x = week_start_date, y = total_cases, color = city)) +
+  geom_line() +
+  labs(x = "Year",
+       y = "Total Cases",
+       title = "Time Series of Total Cases Prediction in Test Set (SVM)",
+       subtitle = "")
+cases_svm_df + scale_x_date(date_breaks = "1 year", date_labels = "%y") + scale_y_continuous(breaks=seq(0, 425, 15)) 
+```
+
+
+
+Plot for actual total_cases vs predicted total_cases (Random Forest)
+```{r message=FALSE, warning=FALSE}
+plot_ly(x = ~lm_test_df$week_start_date) %>%
+  add_lines(y = ~lm_test_df$total_cases, name = "Actual", line = list(color = "red")) %>%
+  add_lines(y = ~rf_df_test3, name = "Predicted", line = list(color = "blue"), yaxis = "y2") %>%
+  
+  layout(
+    yaxis = list(
+      side = "left",
+      title = list("predicted vs actual")
+    ),
+    yaxis2 = list(
+      side = "left",
+      overlaying = "y",
+      anchor = "free"
+    ),
+    margin = list(pad = 30)
+  )
+```
+
+
