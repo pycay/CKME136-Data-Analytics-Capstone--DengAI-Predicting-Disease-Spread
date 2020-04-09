@@ -7,3 +7,5 @@ A brief summary of the objective:
 Using environmental data collected by various U.S. Federal Government agencies—from the Centers for Disease Control and Prevention to the National Oceanic and Atmospheric Administration in the U.S. Department of Commerce—can you predict the number of dengue fever cases reported each week in San Juan, Puerto Rico and Iquitos, Peru?
 
 Link to my RPubs: https://rpubs.com/pycay
+
+![Current Score & Ranking](https://gyazo.com/218e3f2fca872bf16c193a50b2f2674d)
