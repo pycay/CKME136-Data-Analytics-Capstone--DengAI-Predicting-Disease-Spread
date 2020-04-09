@@ -8,4 +8,4 @@ Using environmental data collected by various U.S. Federal Government agenciesâ€
 
 Link to my RPubs: https://rpubs.com/pycay
 
-![Current Score & Ranking](https://gyazo.com/218e3f2fca872bf16c193a50b2f2674d)
+![Current Score & Ranking](score.png)
